@@ -8,7 +8,7 @@ from time import time
 from gensim.utils import simple_preprocess
 from gensim.models import Word2Vec
 from gensim.models.phrases import Phraser, Phrases
-from .utils import _SentenceGenerator_simple, _SentenceGenerator_spanish_g
+from .utils import get_sentence_generator
 
 class Word2vec(object):
     """
@@ -31,7 +31,7 @@ class Word2vec(object):
         self.model_file = os.path.join(path,'%s_model.gs' % files_prefix)
 
     def create_embeddings(self, text_file, detect_phrases=False, generate_files=True,
-                          mode='simple', **kwargs):
+                          mode='simple', content='file', **kwargs):
         """
         Generate embeddings from a batch of text
 
@@ -44,9 +44,10 @@ class Word2vec(object):
         generate_files : bool
             If true, files will be saved.
         mode : string
-            Tokenize text line by line.
-            'simple': min_len=2 and max_len=15.
-            'spanish_g': Generate vectors ready to do text generation on spanish.
+            See get_sentence_generator.
+        content : string
+            'file': load one file.
+            'dir': load all files on the specified directory.
         **kwargs: Word2Vec arguments.
         """
         assert os.path.exists(text_file), 'File not found: %s' % text_file
@@ -54,13 +55,7 @@ class Word2vec(object):
         print('Generating embeddings...')
         t0 = time()
 
-        # generate model
-        if mode == 'simple':
-            sentences = _SentenceGenerator_simple(text_file)
-        elif mode == 'spanish_g':
-            sentences = _SentenceGenerator_spanish_g(text_file)
-        else:
-            raise NameError('Invalid mode: %s.' % mode)
+        sentences = get_sentence_generator(mode, text_file, content=content)
 
         if detect_phrases:
             bigram_transformer = Phrases(sentences)

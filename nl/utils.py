@@ -2,6 +2,7 @@
 Utilities
 """
 import os
+import re
 import json
 import random
 import numpy as np
@@ -9,9 +10,15 @@ from time import time
 
 COMMON_CHARS_REPLACE = (
     # (search_string, replace_string, inverse_use)
-    ('\n', '', False),
     ('[', '{', False),
     (']', '}', False),
+    ('–', '—', False),
+    ('…', '...', False),
+    ('“', '"', False),
+    ('”', '"', False),
+    ('...', ' [tridot] ', True),
+    ('—', ' [guion] ', True),
+    ('\n', ' [newline] ', True),
     ('{', ' [bbkt] ', True),
     ('}', ' [ebkt] ', True),
     ('.', ' [dot] ', True),
@@ -28,6 +35,9 @@ COMMON_CHARS_REPLACE = (
     (')', ' [epar] ', True),
     ('"', ' [dquote] ', True),
     ('\'', ' [squote] ', True),
+    ('*', ' [astr] ', True),
+    ('«', ' [bsay] ', True),
+    ('»', ' [esay] ', True),
     ('   ', ' ', False),
     ('  ', ' ', False)
 )
@@ -53,25 +63,48 @@ COMMON_FORMAT_REPLACE = (
 )
 
 class _SentenceGenerator_simple(object):
-    def __init__(self, file, custom_text=False):
+    def __init__(self, file, custom_text=False, content='file'):
         self.file = file
         self.custom_text = custom_text
-        self.tokenize = lambda x: simple_preprocess(x)
+        self.content = content
+        if content == 'dir':
+            assert os.path.isdir(file), 'Path \'%s\' is not a directory' % file
+            self.files = [os.path.join(file,f) for f in os.listdir(file)]
 
     def __iter__(self):
         if self.custom_text:
             yield self.tokenize(self.file)
         else:
-            for line in open(self.file):
-                yield self.tokenize(line)
+            if self.content == 'file':
+                for line in open(self.file):
+                    yield self.tokenize(line)
+            if self.content == 'dir':
+                for file in self.files:
+                    for line in open(file):
+                        yield self.tokenize(line)
+                        
+    def tokenize(self, text):
+        return simple_preprocess(text)
 
-class _SentenceGenerator_spanish_g(object):
-    def __init__(self, file, custom_text=False):
-        self.file = file
-        self.custom_text = custom_text
-        
+class _SentenceGenerator_general_1(_SentenceGenerator_simple):
     def tokenize(self, text):
         text = text.lower()
+        re_guion = re.compile('^-|\s-')
+        text = re_guion.sub(' [guion] ', text)
+        for a, b, _ in COMMON_CHARS_REPLACE:
+            text = text.replace(a,b)
+        text = text.strip()
+        text = text.split(' ')
+        if '' in text:
+            text.remove('')
+        if ['[newline]'] == text:
+            text.remove('[newline]')
+        return text
+
+class _SentenceGenerator_general_2(_SentenceGenerator_simple):
+    def tokenize(self, text):
+        text = text.lower()
+        text = text.replace('\n', '')
         for a, b, _ in COMMON_CHARS_REPLACE:
             text = text.replace(a,b)
         text = text.strip()
@@ -82,13 +115,36 @@ class _SentenceGenerator_spanish_g(object):
             if text[-1] == '[dot]':
                 text[-1] = '[Edot]'
         return text
+
+def get_sentence_generator(mode, text_file, custom_text=False, content='file'):
+    """
+    Returns a sentence generator class
+    
+    Parameters
+    -----------
+    mode : string
+        Tokenizer for text.
+        'simple': min_len=2 and max_len=15.
+        'general_1': general purpose.
+        'general_2': use when a paragraph is composed by several lines
+                     on the file, it will detect lines by grouping them
+                     until it finds a final dot.
+    text_file : string
+        If true, reads text_file as a string and ignores content option.
+    content : string
+        'file': load one file.
+        'dir': load all files on the specified directory.
+    """
+    if mode == 'simple':
+        Sentences = _SentenceGenerator_simple(text_file, custom_text, content)
+    elif mode == 'general_1':
+        Sentences = _SentenceGenerator_general_1(text_file, custom_text, content)
+    elif mode == 'general_2':
+        Sentences = _SentenceGenerator_general_2(text_file, custom_text, content)
+    else:
+        raise NameError('Invalid mode: %s.' % mode)
         
-    def __iter__(self):
-        if self.custom_text:
-            yield self.tokenize(self.file)
-        else:
-            for line in open(self.file):
-                yield self.tokenize(line)
+    return Sentences
 
 def read_file_lines(file_path, encoding=None, skip_lines=0):
     """
@@ -155,7 +211,7 @@ def print_word_list(word_list):
 
     text = text.strip()
     print(text)
-        
+
 def load_w2v_data(json_file, np_file):
     """
     Load embeddings and vocab dictionaries generated from Word2vec
@@ -185,7 +241,7 @@ def load_w2v_data(json_file, np_file):
     
     return out
 
-def generate_train_data(word2idx, text_file, seq_len=10, mode='simple'):
+def generate_train_data(word2idx, text_file, seq_len=10, mode='simple', content='file'):
     """
     Returns data to generate text
     
@@ -198,9 +254,10 @@ def generate_train_data(word2idx, text_file, seq_len=10, mode='simple'):
     seq_len : int
         Sequence length (number of words used to predict the next).
     mode : string
-        Tokenizer for text.
-        'simple': min_len=2 and max_len=15.
-        'spanish_g': Generate vectors ready to do text generation on spanish.
+        See get_sentence_generator.
+    content : string
+        'file': load one file.
+        'dir': load all files on the specified directory.
     
     Returns
     -----------
@@ -211,13 +268,7 @@ def generate_train_data(word2idx, text_file, seq_len=10, mode='simple'):
     print('Generating train data...')
     t0 = time()
     
-    # generate model
-    if mode == 'simple':
-        sentences = _SentenceGenerator_simple(text_file)
-    elif mode == 'spanish_g':
-        sentences = _SentenceGenerator_spanish_g(text_file)
-    else:
-        raise NameError('Invalid mode: %s.' % mode)
+    sentences = get_sentence_generator(mode, text_file, content=content)
     
     text_idxs = []
     
@@ -250,8 +301,8 @@ class GenerateSamples(object):
     """
     Main class used to generate samples from text file
     """
-    def __init__(self, word2idx, text_file, mode='simple', n_samples=5,
-                 samples_len=40):
+    def __init__(self, word2idx, text_file, mode='simple', content='file', 
+                 n_samples=5, samples_len=40):
         """
         Parameters
         -----------
@@ -260,9 +311,10 @@ class GenerateSamples(object):
         text_file : string
             Text file location.
         mode : string
-            Tokenizer for text.
-            'simple': min_len=2 and max_len=15.
-            'spanish_g': Generate vectors ready to do text generation on spanish.
+            See get_sentence_generator.
+        content : string
+            'file': load one file.
+            'dir': load all files on the specified directory.
         n_samples : int
             Number of sames to generate with the iterator.
         samples_len : int
@@ -275,12 +327,7 @@ class GenerateSamples(object):
         
         assert os.path.exists(text_file), 'File not found: %s' % text_file
 
-        if mode == 'simple':
-            sentences = _SentenceGenerator_simple(text_file)
-        elif mode == 'spanish_g':
-            sentences = _SentenceGenerator_spanish_g(text_file)
-        else:
-            raise NameError('Invalid mode: %s.' % mode)
+        sentences = get_sentence_generator(mode, text_file, content=content)
 
         text_idxs = []
         
@@ -324,21 +371,14 @@ def parse_text(text, word2idx, mode='simple'):
     word2idx : dict
         Word2idx dictionary.
     mode : string
-        Tokenize text line by line.
-        'simple': min_len=2 and max_len=15.
-        'spanish_g': Generate vectors ready to do text generation on spanish.
+        See get_sentence_generator.
         
     Returns
     -----------
     out : list of strings
         Tokenized text.
     """
-    if mode == 'simple':
-        sentences = _SentenceGenerator_simple(text, custom_text=True)
-    elif mode == 'spanish_g':
-        sentences = _SentenceGenerator_spanish_g(text, custom_text=True)
-    else:
-        raise NameError('Invalid mode: %s.' % mode)
+    sentences = get_sentence_generator(mode, text, custom_text=True)
     
     out = []
     
@@ -347,3 +387,16 @@ def parse_text(text, word2idx, mode='simple'):
             out.append(token)
             
     return out
+
+def shuffle_data(x, y, verbose=False):
+    if verbose:
+        print('Shuffling data...')
+        
+    t0 = time()
+    shuffle = np.random.choice(range(len(x)), len(x), replace=False)
+    x = x[shuffle]
+    y = y[shuffle]
+    if verbose:
+        print('%.2fs' % (time() - t0))
+        
+    return x, y

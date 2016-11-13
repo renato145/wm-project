@@ -66,7 +66,7 @@ def generate_from_model(x, model, embeddings, idx2word, word2idx, n_words=20,
                         temperature=1, truncating='pre', custom_text=False,
                         mode='simple'):
     """
-    Returns the single sample formatted to be used by a model
+    Returns a single sample formatted to be used by the model
     
     Parameters
     -----------
@@ -91,9 +91,7 @@ def generate_from_model(x, model, embeddings, idx2word, word2idx, n_words=20,
     custom_text : bool
         If True, the text will be parsed.
     mode : string
-        Tokenizer for text (only apply if custom_text is True).
-        'simple': min_len=2 and max_len=15.
-        'spanish_g': Generate vectors ready to do text generation on spanish.
+        See utils.get_sentence_generator
         
     Returns
     -----------
