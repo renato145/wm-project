@@ -316,7 +316,7 @@ class GenerateSamples(object):
             'file': load one file.
             'dir': load all files on the specified directory.
         n_samples : int
-            Number of sames to generate with the iterator.
+            Number of samples to generate with the iterator.
         samples_len : int
             Number of words for each sample.
         """
@@ -400,3 +400,29 @@ def shuffle_data(x, y, verbose=False):
         print('%.2fs' % (time() - t0))
         
     return x, y
+
+class BatchGenerator(object):
+    """
+    Main class used to generate batches to train data
+    """
+    def __init__(self, x, y, batch_size=128):
+        """
+        Parameters
+        -----------
+        x : train dataimport time
+        y : labels data
+        batch_size : int
+        n_samples : int
+            Number of samples to return per batch.
+        """
+        assert len(x) == len(y), 'x and y have different sizes'
+        
+        self.x = x
+        self.y = y
+        self.batch_size = batch_size
+        
+    def __iter__(self):
+        while True:
+            shuffle = np.random.choice(range(len(self.x)), self.batch_size, replace=False)
+            yield self.x[shuffle], self.y[shuffle]
+        

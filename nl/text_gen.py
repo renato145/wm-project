@@ -38,7 +38,7 @@ def format_sample(x, seq_len, embeddings, word2idx=None):
     
     return out
 
-def temperature_sample(preds, temperature=1.0):
+def temperature_sample(preds, temperature=1.0, compute_sample=True):
     """
     Helper function to sample an index from a probability array
     
@@ -48,6 +48,8 @@ def temperature_sample(preds, temperature=1.0):
         Probability array.
     temperature : float
         The bigger, the sample will be more diverse.
+    compute_sample : boolean
+        If False, it will return the entire set of probabilities.
         
     Returns
     -----------
@@ -58,6 +60,10 @@ def temperature_sample(preds, temperature=1.0):
     preds = np.log(preds) / temperature
     exp_preds = np.exp(preds)
     preds = exp_preds / np.sum(exp_preds)
+    
+    if not compute_sample:
+        return preds
+    
     probas = np.random.multinomial(1, preds, 1)
     
     return np.argmax(probas)
@@ -123,3 +129,41 @@ def generate_from_model(x, model, embeddings, idx2word, word2idx, n_words=20,
     out = [idx2word[idx] for idx in x]
     
     return out
+
+def get_next_word_distribution(x, model, embeddings, word2idx,
+                               temperature=1, mode='simple'):
+    """
+    Given a text returns the distribution of probabilities of the next word.
+    
+    Parameters
+    -----------
+    x : string
+        Inputs to predict next word.
+    model : keras.Model
+        RNN trained model from keras.
+    embeddings : np.array
+        Word2vec embeddings.
+    word2idx : dict
+        Word2idx dictionary.
+    temperature : float
+        The bigger, the sample will be more diverse.
+    mode : string
+        See utils.get_sentence_generator
+        
+    Returns
+    -----------
+    out : np.array
+        Array of shape [1, seq_len, input_dim] to be used as model input.
+    """
+    seq_len = model.input_shape[1]
+    
+    x = x[-seq_len:]
+    x = [word2idx[word] for word in x]
+    
+    model_input = x[0:seq_len]
+    model_input = format_sample(model_input, seq_len, embeddings)
+    model_output = model.predict(model_input)
+    model_output = model_output.reshape([-1])
+    model_output = temperature_sample(model_output, temperature, False)
+    
+    return model_output
