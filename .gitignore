@@ -1,0 +1,4 @@
+.ipynb_checkpoints
+text_files/*
+w2v_embs/*
+models/*
